@@ -1,0 +1,13 @@
+grafana:
+  adminUser: "saoriAdmin"
+  adminPassword: "saori123"
+  service:
+    type: NodePort
+    nodePort: 32000
+
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 32001
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false

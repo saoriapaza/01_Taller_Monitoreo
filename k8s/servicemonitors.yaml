@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: movie-catalog-monitor
+  namespace: cinema-system
+  labels:
+    release: prometheus # Assuming standard prometheus-community chart labels
+spec:
+  selector:
+    matchLabels:
+      app: movie-catalog
+  endpoints:
+    - port: http
+      path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ticket-sales-monitor
+  namespace: cinema-system
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: ticket-sales
+  endpoints:
+    - port: http
+      path: /metrics

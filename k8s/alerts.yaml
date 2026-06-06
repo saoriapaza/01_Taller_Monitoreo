@@ -1,0 +1,50 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cinema-alerts
+  namespace: cinema-system
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: cinema-rules
+      rules:
+        # 1. Servicio Caído: Movie Catalog
+        - alert: MovieCatalogDown
+          expr: up{job="movie-catalog"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Servicio Movie Catalog Caído"
+            description: "El servicio movie-catalog lleva más de 1 minuto sin responder en Prometheus."
+        
+        # 2. Servicio Caído: Ticket Sales
+        - alert: TicketSalesDown
+          expr: up{job="ticket-sales"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Servicio Ticket Sales Caído"
+            description: "El servicio ticket-sales lleva más de 1 minuto sin responder en Prometheus."
+
+        # 3. Alerta de Negocio: Entradas Agotadas
+        - alert: MoviesSoldOut
+          expr: movies_seats_available == 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "¡Entradas agotadas!"
+            description: "No hay más asientos disponibles para ninguna película. El negocio ha alcanzado el 100% de ocupación."
+
+        # 4. Alerta de Negocio/Técnica: Alta Tasa de Fallos en Ventas (Timeouts/Errores)
+        - alert: HighTicketSalesFailure
+          expr: rate(tickets_sales_failure_total[5m]) > 0.5 or rate(tickets_sales_timeout_total[5m]) > 0.5
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Alta tasa de fallos en ventas"
+            description: "El servicio de ventas está experimentando demasiados errores o timeouts al intentar reservar boletos."

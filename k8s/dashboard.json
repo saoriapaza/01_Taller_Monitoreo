@@ -1,0 +1,41 @@
+{
+  "title": "Cinema Monitoring",
+  "panels": [
+    {
+      "title": "Estado Movie Catalog",
+      "type": "stat",
+      "targets": [{"expr": "up{job='movie-catalog'}"}],
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "title": "Estado Ticket Sales",
+      "type": "stat",
+      "targets": [{"expr": "up{job='ticket-sales'}"}],
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "title": "Tasa de Búsquedas (Req/s)",
+      "type": "timeseries",
+      "targets": [{"expr": "rate(movies_search_count_total[1m])"}],
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 6}
+    },
+    {
+      "title": "Latencia de Reserva (ms)",
+      "type": "timeseries",
+      "targets": [{"expr": "rate(movies_reservation_time_seconds_sum[1m]) / rate(movies_reservation_time_seconds_count[1m])"}],
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 6}
+    },
+    {
+      "title": "Asientos Disponibles (Negocio)",
+      "type": "stat",
+      "targets": [{"expr": "movies_seats_available"}],
+      "gridPos": {"x": 0, "y": 10, "w": 6, "h": 4}
+    },
+    {
+      "title": "Ventas Exitosas (Negocio)",
+      "type": "timeseries",
+      "targets": [{"expr": "tickets_sales_success_total"}],
+      "gridPos": {"x": 6, "y": 10, "w": 18, "h": 6}
+    }
+  ]
+}
