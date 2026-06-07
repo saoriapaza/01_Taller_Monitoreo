@@ -1,54 +1,77 @@
-# Informe Técnico
+# Informe Técnico — Sistema de Monitoreo Cinema
+
+**Curso:** Kubernetes con Prometheus & Grafana — Valle Grande  
+**Alumna:** Saori Apaza  
+**Dominio:** Sistema de Cines (Movie Catalog + Ticket Sales)
+
+---
 
 ## Parte A — Conceptos
 
 **1. ¿Qué es Micrometer y por qué se usa en lugar de la librería directa de Prometheus?**
-Micrometer es una fachada (facade) de métricas para aplicaciones Java (como el SLF4J pero para métricas). Se usa porque desacopla el código de la aplicación de la herramienta de monitoreo subyacente. En lugar de escribir código que solo entiende Prometheus, escribimos código para Micrometer, y este se encarga de traducirlo y exponerlo en el formato que Prometheus necesita. Si mañana cambiamos a Datadog o New Relic, no tocamos el código, solo cambiamos la dependencia.
 
-**2. ¿Cuál es la diferencia entre Counter, Gauge y Timer? Da un ejemplo de cada uno tomado de tu código.**
-- **Counter:** Solo puede ir hacia arriba (aumentar). Sirve para medir cosas que ocurren como "veces que se ejecutó algo". 
-  - *Ejemplo en código:* `ticketSuccessCounter` que cuenta cuántos boletos se vendieron.
-- **Gauge:** Puede subir y bajar. Mide un valor actual en un momento dado.
-  - *Ejemplo en código:* `totalAvailableSeats`, que disminuye conforme se venden las entradas.
-- **Timer:** Mide tanto el conteo de eventos como el tiempo total y el tiempo máximo que tardan en ejecutarse. Útil para medir latencias.
-  - *Ejemplo en código:* `reservationTimer` que mide cuánto tardó el bloque `try-finally` al reservar un asiento en `MovieController.java`.
-
-**3. ¿Qué es un ServiceMonitor y cómo sabe el Prometheus Operator qué monitorear?**
-Es un recurso personalizado (CRD) introducido por Prometheus Operator. Describe un conjunto de *targets* (servicios) que Prometheus debe raspar para obtener métricas. El Operator sabe qué monitorear leyendo el campo `selector` del ServiceMonitor. Si los `matchLabels` coinciden con las etiquetas de un Kubernetes Service, el Operator reescribe dinámicamente el archivo de configuración de Prometheus para que vaya a ese Service a pedir las métricas.
-
-**4. ¿Cuál es la diferencia entre liveness probe y readiness probe?**
-- **Liveness Probe:** Responde a la pregunta "¿está el contenedor vivo?". Si falla, Kubernetes asume que el contenedor está bloqueado/roto, lo mata y lo reinicia (entra en CrashLoopBackOff si sigue fallando).
-- **Readiness Probe:** Responde a la pregunta "¿está el contenedor listo para recibir tráfico?". Si falla (por ejemplo, porque la app está cargando configuraciones pesadas), Kubernetes NO lo mata, simplemente lo saca de la lista de endpoints del Service para que no le lleguen peticiones de los usuarios temporalmente.
-
-**5. ¿Por qué es necesario apuntar Docker al daemon de Minikube antes de construir las imágenes?**
-Porque Minikube corre su propio entorno Docker aislado dentro de su máquina virtual. Si usamos el Docker de nuestra PC (`docker build...`) la imagen se queda en nuestra PC host. Cuando Kubernetes intente desplegar el pod, buscará la imagen dentro de la máquina de Minikube (o en internet) y dará error `ImagePullBackOff` porque no existe ahí. Ejecutar `eval $(minikube docker-env)` vincula nuestra consola al Docker de Minikube para construir la imagen directamente allí adentro.
-
-**6. ¿Qué ocurre si no configuras el selector de ServiceMonitors en el values.yaml del chart?**
-Por defecto, el chart `kube-prometheus-stack` está configurado para que su instancia de Prometheus SOLO haga caso a los ServiceMonitors que tengan ciertas etiquetas específicas del chart (como `release: prometheus`). Si no configuramos `serviceMonitorSelectorNilUsesHelmValues: false` (o no ponemos las etiquetas correctas), Prometheus ignorará olímpicamente los ServiceMonitors que nosotros creamos, y los endpoints de nuestros microservicios jamás aparecerán en la pestaña `/targets`.
+Micrometer es una fachada (facade) de métricas para aplicaciones Java, de manera similar a lo que SLF4J representa para el logging. Se usa porque desacopla completamente el código de la aplicación de la herramienta de monitoreo subyacente, lo cual significa que en lugar de escribir código que solo entiende Prometheus, escribimos código para Micrometer y este se encarga de traducirlo y exponerlo en el formato que Prometheus necesita. Si en el futuro se quisiera cambiar a Datadog o New Relic, no sería necesario tocar el código de negocio, solo cambiar la dependencia en el `pom.xml`.
 
 ---
 
-## Parte B — PromQL 
+**2. ¿Cuál es la diferencia entre Counter, Gauge y Timer? Da un ejemplo de cada uno tomado de tu código.**
 
-**1. Tasa de requests por minuto de tu Servicio B en los últimos 5 minutos**
+Un **Counter** solo puede incrementarse, nunca disminuir, por lo que sirve para contar eventos que ocurren de forma acumulativa. En este proyecto se usa `ticketSuccessCounter` en `TicketController.java` para contar cuántos boletos se han vendido exitosamente desde que arrancó el servicio.
+
+Un **Gauge** representa un valor que puede subir y bajar libremente, reflejando el estado actual de algo en un momento dado. Aquí se usa `totalAvailableSeats` en `MovieController.java`, que disminuye conforme se venden entradas y teóricamente podría subir si se añadieran más funciones.
+
+Un **Timer** mide tanto la cantidad de veces que ocurre un evento como el tiempo que tarda en completarse, lo que lo hace ideal para latencias. En `MovieController.java` se usa `reservationTimer` para medir cuánto tarda el bloque de reserva de asientos, capturando el tiempo en el bloque `try-finally`.
+
+---
+
+**3. ¿Qué es un ServiceMonitor y cómo sabe el Prometheus Operator qué monitorear?**
+
+Un ServiceMonitor es un recurso personalizado (CRD) introducido por el Prometheus Operator que describe un conjunto de targets que Prometheus debe raspar para obtener métricas. El Operator determina qué monitorear leyendo el campo `selector` del ServiceMonitor: cuando los `matchLabels` coinciden con las etiquetas de un Kubernetes Service, el Operator reescribe dinámicamente la configuración de Prometheus para que vaya a ese Service a recolectar métricas en el intervalo configurado.
+
+---
+
+**4. ¿Cuál es la diferencia entre liveness probe y readiness probe?**
+
+La **Liveness Probe** responde a la pregunta "¿está el contenedor vivo?". Si falla, Kubernetes asume que el contenedor está bloqueado o roto, de modo que lo mata y lo reinicia, pudiendo entrar en `CrashLoopBackOff` si sigue fallando repetidamente.
+
+La **Readiness Probe** responde a la pregunta "¿está el contenedor listo para recibir tráfico?". Si falla (por ejemplo, porque la aplicación está inicializando conexiones), Kubernetes no lo mata sino que simplemente lo saca temporalmente de la lista de endpoints del Service para que no le lleguen peticiones de los usuarios hasta que esté listo.
+
+---
+
+**5. ¿Por qué es necesario apuntar Docker al daemon de Minikube antes de construir las imágenes?**
+
+Minikube corre su propio entorno Docker aislado dentro de una máquina virtual, separado completamente del Docker del sistema operativo host. Si se construye la imagen con el Docker de la PC host, la imagen queda almacenada ahí y cuando Kubernetes intente desplegarla, la buscará dentro de la máquina de Minikube o en internet, fallando con el error `ImagePullBackOff` porque no existe en ese contexto. Ejecutar `eval $(minikube docker-env)` redirige la consola para que todos los comandos de Docker apunten al daemon interno de Minikube, construyendo la imagen directamente donde Kubernetes la necesita.
+
+---
+
+**6. ¿Qué ocurre si no configuras el selector de ServiceMonitors en el values.yaml del chart?**
+
+Por defecto, el chart `kube-prometheus-stack` configura su instancia de Prometheus para que solo preste atención a los ServiceMonitors que tengan etiquetas específicas del chart (como `release: monitoring`). Sin configurar `serviceMonitorSelectorNilUsesHelmValues: false` junto con un `serviceMonitorSelector: {}` vacío, Prometheus ignorará completamente los ServiceMonitors creados en otros namespaces y los endpoints de los microservicios nunca aparecerán en la pestaña `/targets`, haciendo imposible el monitoreo.
+
+---
+
+## Parte B — PromQL
+
+**1. Tasa de requests por minuto de Ticket Sales en los últimos 5 minutos**
 ```promql
 rate(http_server_requests_seconds_count{application="ticket-sales"}[5m]) * 60
 ```
 
-**2. Latencia p95 del endpoint más crítico de tu sistema**
-(Endpoint: `/movies/{id}/reserve` de Movie Catalog)
+**2. Latencia p95 del endpoint más crítico del sistema**
+
+El endpoint más crítico es `/movies/{id}/reserve` de Movie Catalog, ya que es el cuello de botella de toda la cadena de compra:
 ```promql
 histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{uri="/movies/{id}/reserve"}[5m])) by (le))
 ```
-*(Nota: Micrometer usa buckets para los Timers que permiten este cálculo).*
 
 **3. Estado UP/DOWN de ambos servicios al mismo tiempo**
 ```promql
 up{job=~"movie-catalog|ticket-sales"}
 ```
 
-**4. Una query que responda una pregunta de negocio propia de tu dominio**
-*Pregunta: ¿A qué ritmo se están agotando las entradas en general? (Asientos perdidos por minuto)*
+**4. Query de negocio — ritmo de agotamiento de entradas**
+
+Pregunta: ¿A qué velocidad se están agotando las entradas disponibles (asientos perdidos por minuto)?
 ```promql
 rate(movies_seats_available[5m]) * -60
 ```
@@ -57,28 +80,123 @@ rate(movies_seats_available[5m]) * -60
 
 ## Parte C — Evidencias de Casuísticas
 
-### Casuística 1 — El Servicio Caído
-- **Activación:** `kubectl scale deployment movie-catalog --replicas=0 -n cinema-system`
-- **Captura Grafana:** ![casuistica1](evidencias/casuistica1-servicio-caido.png)
-- **Resolución:** `kubectl scale deployment movie-catalog --replicas=1 -n cinema-system`
-- **Lección:** Al caer el servicio de catálogo de películas, las peticiones de venta de boletos en `ticket-sales` fallan porque dependen de él. Esto demuestra la importancia de configurar alertas de disponibilidad (AlertManager) para detectar cuando los pods de un servicio crítico se caen o escalan a cero.
+### 🔴 Casuística 1 — El Servicio Caído
 
-### Casuística 2 — El Servicio Lento
-- **Activación:** `bash load-testing/chaos-delay.sh enable 3000`
-- **Captura Grafana:** ![casuistica2](evidencias/casuistica2-servicio-lento.png)
-- **Resolución:** `bash load-testing/chaos-delay.sh disable`
-- **Lección:** Al inyectar un retraso (delay) artificial en `movie-catalog`, observamos que las peticiones de `ticket-sales` comenzaron a reportar Timeouts. Esto resalta la importancia de gráficas de latencia (percentiles) para detectar degradación silenciosa del servicio antes de que provoque una caída total de la aplicación cliente.
+**Contexto narrativo:** Durante el estreno de una película muy esperada, un error de configuración en el deployment de `movie-catalog` hace que el servicio entre en `CrashLoopBackOff`. Los usuarios de `ticket-sales` comienzan a recibir errores porque el servicio del que dependen ha desaparecido.
 
-### Casuística 3 — Tormenta de Requests
-- **Activación:** `bash load-testing/stress-test.sh load 500`
-- **Captura Grafana:** ![casuistica3](evidencias/casuistica3-tormenta-requests.png)
-- **Resolución:** Esperar a que pase la tormenta y observar cómo el sistema recupera su estado natural (o cómo el HPA estabiliza los pods).
-- **Lección:** Un pico masivo de peticiones incrementa enormemente el consumo de CPU y memoria, pudiendo saturar el servicio. El monitoreo nos permite correlacionar el pico de tráfico con el uso de recursos y configurar autoscalado (HPA) basándonos en estas métricas.
+**Síntoma:** Las compras de tickets fallan con error 500 y el panel de estado en Grafana cae a 0.
+
+**Activación:**
+```bash
+kubectl scale deployment movie-catalog --replicas=0 -n cinema-system
+```
+
+**Diagnóstico en Prometheus/Grafana:**
+
+Al escalar el deployment a 0 réplicas, el target de `movie-catalog` desaparece de `/targets` y la alerta `TargetDown` entra en estado **FIRING** en Prometheus.
+
+![Pods caídos](img/casuistica1-pods-caidos.png)
+
+*El comando `kubectl get pods` muestra que solo `ticket-sales` permanece activo.*
+
+![Targets down](img/casuistica1-targets-down.png)
+
+*En `/targets` de Prometheus, el pool de `movie-catalog` desaparece completamente.*
+
+![Alerta firing](img/casuistica1-alerta-firing.png)
+
+*La alerta `TargetDown` entra en estado FIRING en Prometheus Alerts.*
+
+**Resolución:**
+```bash
+kubectl scale deployment movie-catalog --replicas=1 -n cinema-system
+```
+
+**Lección técnica:** Cuando un microservicio crítico cae, todos los servicios que dependen de él se ven afectados en cascada. Las alertas de disponibilidad permiten detectar este tipo de fallos en segundos en lugar de esperar a que los usuarios reporten errores, demostrando la diferencia entre liveness probe (detecta si el contenedor está vivo) y readiness probe (detecta si está listo para recibir tráfico).
 
 ---
 
-## Parte D — Evidencias del sistema
-1. **Targets de Prometheus (UP):** ![targets](evidencias/prometheus-targets-up.png)
-2. **Dashboard Principal (Grafana):** ![dashboard](evidencias/grafana-dashboard.png)
-3. **Pods Corriendo (CLI):** ![pods](evidencias/kubectl-pods-running.png)
-4. **Alertas en Firing:** ![alerta](evidencias/alerta-firing.png)
+### 🟡 Casuística 2 — El Servicio Lento
+
+**Contexto narrativo:** El servidor de `movie-catalog` empieza a responder lentamente debido a una sobrecarga de base de datos simulada. El equipo de operaciones no sabe qué servicio está causando el problema porque desde la perspectiva del usuario final simplemente "la app está lenta".
+
+**Síntoma:** Las compras tardan más de 2 segundos en responder y eventualmente empiezan a fallar con error 504 Gateway Timeout.
+
+**Activación:**
+```bash
+kubectl set env deployment/movie-catalog DELAY_MS=3000 -n cinema-system
+```
+
+**Diagnóstico en Prometheus/Grafana:**
+
+Con un delay de 3000ms en `movie-catalog` y un timeout de 2000ms configurado en `ticket-sales`, todas las llamadas entre servicios empiezan a fallar.
+
+![Timeout en terminal](img/casuistica2-timeout-terminal.png)
+
+*El curl directo al endpoint de compra retorna `504 Gateway Timeout` con el mensaje "Service A is taking too long to respond".*
+
+![Latencia en Grafana](img/casuistica2-grafana-latencia.png)
+
+*El panel "Estado Ticket Sales" se pone rojo mientras que el panel de latencia sube drásticamente, evidenciando la degradación.*
+
+![Delay en Prometheus](img/casuistica2-prometheus-delay.png)
+
+*La métrica `movies_artificial_delay` expuesta como Gauge muestra el valor 3000, permitiendo identificar exactamente qué servicio tiene el problema.*
+
+**Resolución:**
+```bash
+kubectl set env deployment/movie-catalog DELAY_MS=0 -n cinema-system
+```
+
+**Lección técnica:** La latencia se propaga entre microservicios de forma silenciosa. Sin observabilidad, es imposible aislar cuál servicio es el culpable porque el error se manifiesta en el servicio cliente, no en el origen. El Gauge `movies_artificial_delay` demuestra el valor de exponer métricas de configuración en tiempo real.
+
+---
+
+### 🟠 Casuística 3 — Tormenta de Requests
+
+**Contexto narrativo:** Se anuncia una preventa masiva de entradas para un concierto. Miles de usuarios intentan comprar al mismo tiempo, generando una tormenta de requests que satura el sistema.
+
+**Síntoma:** El tiempo de respuesta aumenta, muchas peticiones fallan y el sistema comienza a verse sobrecargado.
+
+**Activación:**
+```bash
+bash load-testing/stress-test.sh load 500
+```
+
+**Diagnóstico en Prometheus/Grafana:**
+
+![Tormenta de requests](img/casuistica3-tormenta-requests.png)
+
+*El panel "Ventas Exitosas" muestra un crecimiento acelerado mientras que "Asientos Disponibles" cae en rojo, evidenciando el agotamiento acelerado de inventario bajo carga masiva.*
+
+**Resolución:** Esperar a que pase la tormenta o configurar un HPA (Horizontal Pod Autoscaler) para escalar automáticamente los pods cuando el CPU supere el umbral definido.
+
+**Lección técnica:** Un pico masivo de peticiones puede saturar el servicio y agotar el inventario de negocio más rápido de lo esperado. El monitoreo permite correlacionar el pico de tráfico con el impacto en métricas de negocio, y con esos datos se puede configurar autoscalado basado en métricas reales.
+
+---
+
+## Parte D — Evidencias del Sistema
+
+**1. Targets de Prometheus con ambos servicios en estado UP**
+
+![Prometheus targets UP](img/Prometheus_targets_UP.png)
+
+*Ambos ServiceMonitors (`movie-catalog` y `ticket-sales`) aparecen en estado UP en la pestaña `/targets` de Prometheus, confirmando que el scraping de métricas funciona correctamente.*
+
+**2. Dashboard de Grafana con los seis paneles funcionando**
+
+![Grafana dashboard](img/Grafana_dashboard.png)
+
+*El dashboard "Cinema Monitoring" muestra los 6 paneles con métricas reales: Estado Movie Catalog, Estado Ticket Sales, Tasa de Búsquedas, Latencia de Reserva, Asientos Disponibles y Ventas Exitosas.*
+
+**3. Pods en estado Running**
+
+![Pods en Running](img/Pods_Running.png)
+
+*El comando `kubectl get pods -n cinema-system` confirma que ambos pods están en estado `1/1 Running` sin reinicios.*
+
+**4. Alerta en estado FIRING**
+
+![Alerta firing](img/casuistica1-alerta-firing.png)
+
+*Durante la Casuística 1, la alerta `TargetDown` entró en estado FIRING en Prometheus, confirmando que el sistema de alertas funciona correctamente ante una caída real de servicio.*
