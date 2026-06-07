@@ -1,5 +1,7 @@
 {
+  "uid": "cinema-monitoring",
   "title": "Cinema Monitoring",
+  "schemaVersion": 36,
   "panels": [
     {
       "title": "Estado Movie Catalog",

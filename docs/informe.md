@@ -52,3 +52,33 @@ up{job=~"movie-catalog|ticket-sales"}
 ```promql
 rate(movies_seats_available[5m]) * -60
 ```
+
+---
+
+## Parte C — Evidencias de Casuísticas
+
+### Casuística 1 — El Servicio Caído
+- **Activación:** `kubectl scale deployment movie-catalog --replicas=0 -n cinema-system`
+- **Captura Grafana:** ![casuistica1](evidencias/casuistica1-servicio-caido.png)
+- **Resolución:** `kubectl scale deployment movie-catalog --replicas=1 -n cinema-system`
+- **Lección:** Al caer el servicio de catálogo de películas, las peticiones de venta de boletos en `ticket-sales` fallan porque dependen de él. Esto demuestra la importancia de configurar alertas de disponibilidad (AlertManager) para detectar cuando los pods de un servicio crítico se caen o escalan a cero.
+
+### Casuística 2 — El Servicio Lento
+- **Activación:** `bash load-testing/chaos-delay.sh enable 3000`
+- **Captura Grafana:** ![casuistica2](evidencias/casuistica2-servicio-lento.png)
+- **Resolución:** `bash load-testing/chaos-delay.sh disable`
+- **Lección:** Al inyectar un retraso (delay) artificial en `movie-catalog`, observamos que las peticiones de `ticket-sales` comenzaron a reportar Timeouts. Esto resalta la importancia de gráficas de latencia (percentiles) para detectar degradación silenciosa del servicio antes de que provoque una caída total de la aplicación cliente.
+
+### Casuística 3 — Tormenta de Requests
+- **Activación:** `bash load-testing/stress-test.sh load 500`
+- **Captura Grafana:** ![casuistica3](evidencias/casuistica3-tormenta-requests.png)
+- **Resolución:** Esperar a que pase la tormenta y observar cómo el sistema recupera su estado natural (o cómo el HPA estabiliza los pods).
+- **Lección:** Un pico masivo de peticiones incrementa enormemente el consumo de CPU y memoria, pudiendo saturar el servicio. El monitoreo nos permite correlacionar el pico de tráfico con el uso de recursos y configurar autoscalado (HPA) basándonos en estas métricas.
+
+---
+
+## Parte D — Evidencias del sistema
+1. **Targets de Prometheus (UP):** ![targets](evidencias/prometheus-targets-up.png)
+2. **Dashboard Principal (Grafana):** ![dashboard](evidencias/grafana-dashboard.png)
+3. **Pods Corriendo (CLI):** ![pods](evidencias/kubectl-pods-running.png)
+4. **Alertas en Firing:** ![alerta](evidencias/alerta-firing.png)
